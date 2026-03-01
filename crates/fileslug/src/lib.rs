@@ -179,6 +179,11 @@ fn restore_version_dots(input: &str) -> String {
 /// Maximum filename length in bytes (common filesystem limit).
 const MAX_FILENAME_BYTES: usize = 255;
 
+/// Maximum slug length in bytes for plain text slugification.
+/// Generous ceiling — no real slug should approach this, but it guards
+/// against unbounded output if someone feeds in very large input.
+const MAX_SLUG_BYTES: usize = 1024;
+
 /// Truncate `base` so that `base + ext` fits within `max_bytes`.
 /// Prefers cutting at a separator boundary (dash, underscore) to avoid broken words.
 /// Returns the base unchanged if it already fits.
@@ -376,8 +381,8 @@ pub fn slugify_string(input: &str, options: &SlugifyOptions) -> String {
     // Step 6: Restore version dots
     let slugified = restore_version_dots(&slugified);
 
-    // Step 7: Truncate to max length (no extension to account for)
-    truncate_base(&slugified, "", MAX_FILENAME_BYTES)
+    // Step 7: Truncate to max length
+    truncate_base(&slugified, "", MAX_SLUG_BYTES)
 }
 
 #[cfg(test)]
@@ -852,10 +857,19 @@ mod tests {
     #[test]
     fn test_slugify_string_truncates_long_input() {
         let opts = SlugifyOptions::default();
-        let long_input = "a ".repeat(200); // 200 words → "a-a-a-..." exceeds 255 bytes
+        let long_input = "a ".repeat(600); // 600 words → "a-a-a-..." exceeds 1024 bytes
         let result = slugify_string(&long_input, &opts);
-        assert!(result.len() <= 255, "result is {} bytes", result.len());
+        assert!(result.len() <= 1024, "result is {} bytes", result.len());
         assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn test_slugify_string_no_truncation_under_1k() {
+        let opts = SlugifyOptions::default();
+        // 300 words of "ab" → "ab-ab-ab-..." = 899 bytes, above 255 but under 1024
+        let input = "ab ".repeat(300);
+        let result = slugify_string(&input, &opts);
+        assert_eq!(result.len(), 899, "should not truncate under 1024 bytes");
     }
 
     #[test]
